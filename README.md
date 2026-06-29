@@ -9,7 +9,7 @@ A personal project index and offline archive for all your Instructables projects
 ## What you get
 
 - A searchable, filterable website listing all your Instructables
-- A full offline archive of every project — text, images, and PDFs
+- A full offline archive of every project - text, images, and PDFs
 - Lightbox image zoom, parts list links, and PDF download buttons
 - Hosted free on GitHub Pages
 
@@ -58,7 +58,7 @@ python scraper/download_archive.py
 python build_html.py
 ```
 
-The first full archive takes 1–2 hours depending on how many projects you have.
+The first full archive takes 1-2 hours depending on how many projects you have.
 
 ### 6. Push to GitHub
 
