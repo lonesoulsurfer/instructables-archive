@@ -236,6 +236,23 @@ def get_intro_images(page, cover_url):
     return [i for i in imgs if i != cover_base][:6]
 
 
+def get_view_count(page):
+    """Extract the view count using the data-testid attribute (JS-rendered)."""
+    try:
+        el = page.query_selector('[data-testid="project-view-count"]')
+        if el:
+            text = el.inner_text().strip()
+            text = text.lower().replace(",", "")
+            if text.endswith("m"):
+                return int(float(text[:-1]) * 1_000_000)
+            if text.endswith("k"):
+                return int(float(text[:-1]) * 1_000)
+            return int(text)
+    except Exception:
+        pass
+    return 0
+
+
 def archive_project(url, project_title, page, session, force=False):
     folder_name = slug_from_url(url)
     project_dir = ARCHIVE_DIR / folder_name
@@ -260,6 +277,27 @@ def archive_project(url, project_title, page, session, force=False):
         return False
 
     title     = data.get("title") or project_title
+    views     = get_view_count(page)
+
+    # Update the view count in projects.json for this URL
+    try:
+        projects_path = Path(__file__).parent.parent / "projects.json"
+        if projects_path.exists():
+            import json as _json
+            with open(projects_path, encoding="utf-8") as f:
+                all_projects = _json.load(f)
+            changed = False
+            for p in all_projects:
+                if p.get("url") == url and views:
+                    if p.get("views") != views:
+                        p["views"] = views
+                        changed = True
+                    break
+            if changed:
+                with open(projects_path, "w", encoding="utf-8") as f:
+                    _json.dump(all_projects, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"    [warn] could not update projects.json views: {e}")
     cover_url = data.get("coverUrl", "")
     steps     = data.get("steps", [])
 

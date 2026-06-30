@@ -45,27 +45,45 @@ DELAY       = 0.6   # seconds between requests — be polite
 # Map keywords in title/URL to categories.
 # First match wins, so put more specific terms first.
 CATEGORY_RULES = [
+    # Junkbots first — very specific terms, must beat "robot" in electronics
+    ("junkbots",    ["junkbot", "mechanical bug",
+                     "vacuum tube bug", "typewriter parts", "dancing, magnetic robot",
+                     "robot mechanical beetle", "walking robot", "light sensitive junkbot",
+                     "ladybug pendant"]),
+
+    # Lamps — anything light/lamp related, checked before electronics so
+    # "LED lamp" style titles land here, not in electronics
+    ("lamps",       ["lamp", "lantern", "candle", "light bulb", "light globe",
+                     "night light", "flashlight", "flash light", "torch",
+                     "lighter", "wand", "filament", "jar light", "ring lamp",
+                     "light theremin", "light sensor", "led light", "led ring",
+                     "led cube", "led candle", "led and copper", "globe hack",
+                     "trench lighter", "bird house with night"]),
+
+    # Synths — music/sound generation devices
     ("synths",      ["synth", "drum machine", "sequencer", "oscillator", "beatmaster",
                      "dub siren", "fizzle", "moog", "theremin", "eurorack", "mozzi",
-                     "fm synth", "drone", "delay", "reverb", "groove box", "bleep",
-                     "freaq", "mutant", "medusa", "proton", "elements", "cigar box",
-                     "sound bend", "circuit bend", "echo", "audio"]),
-    ("electronics", ["arduino", "attiny", "raspberry pi", "led", "555", "circuit",
+                     "fm synth", "drone synth", "groove box", "bleep drum",
+                     "freaq", "mutant", "medusa", "proton -", "elements -", "cigar box",
+                     "sound bend", "circuit bend", "echo & reverb", "echo / delay",
+                     "metronome", "voice changer"]),
+
+    # Electronics — circuits, microcontrollers, general builds
+    ("electronics", ["arduino", "attiny", "raspberry pi", "555 ", "circuit",
                      "battery", "power supply", "oscilloscope", "programmer", "pcb",
-                     "cmos", "robot", "servo", "tetris", "arcade", "game", "yahtzee",
+                     "cmos", "servo motor", "tetris", "arcade", "yahtzee",
                      "conway", "clock", "sensor", "amp", "headphone", "guitar amp",
-                     "resistor", "op amp", "ic tester"]),
-    ("lamps",       ["lamp", "light", "lantern", "candle", "wand", "filament",
-                     "resin lamp", "bottle lamp", "jar light", "ring lamp"]),
-    ("junkbots",    ["junkbot", "robot", "bug", "mechanical", "vacuum tube bug",
-                     "typewriter"]),
-    ("making",      ["box", "lighter", "fire", "knife", "wooden", "bracelet",
+                     "resistor", "op amp", "ic tester", "gerber"]),
+
+    # Making — physical builds, crafts, everything else
+    ("making",      ["box", "fire", "knife", "wooden", "bracelet",
                      "ring", "pendant", "stand", "holder", "shelf", "table",
                      "secret", "stash", "flask", "book safe", "spudger",
                      "canister", "knob", "display", "camera stand", "frame",
                      "milk crate", "skateboard", "fishing", "bike", "trike",
                      "rocket", "ray gun", "lathe", "soldering", "copper",
-                     "brass", "paint can", "spray can"]),
+                     "brass", "paint can", "spray can", "junk yard", "junkyard",
+                     "fish-bone sculpture", "sculpture"]),
 ]
 DEFAULT_CATEGORY = "making"
 
