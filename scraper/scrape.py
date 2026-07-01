@@ -12,9 +12,13 @@ Requirements:
     pip install requests beautifulsoup4
 
 Notes:
-    - Runs at ~2 req/sec to stay polite. Full scrape of 254 projects takes ~5 min.
+    - Runs at ~2 req/sec to stay polite. Full scrape of 250+ projects takes ~5 min.
     - Safe to re-run: existing projects.json is merged so nothing is lost.
     - Run this whenever you publish a new Instructable.
+    - View counts require download_archive.py to run at least once, since
+      Instructables renders view counts via JavaScript that a plain HTTP
+      request can't see. scrape.py sets views to 0 initially; the archive
+      step fills them in.
 """
 
 import json
@@ -33,7 +37,6 @@ except ImportError:
     sys.exit(1)
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
-import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import USERNAME, DISPLAY_NAME
 
@@ -73,7 +76,10 @@ CATEGORY_RULES = [
                      "battery", "power supply", "oscilloscope", "programmer", "pcb",
                      "cmos", "servo motor", "tetris", "arcade", "yahtzee",
                      "conway", "clock", "sensor", "amp", "headphone", "guitar amp",
-                     "resistor", "op amp", "ic tester", "gerber"]),
+                     "resistor", "op amp", "ic tester", "gerber", "voltage",
+                     "optocoupler", "vactrol", "controller", "charger",
+                     "stun gun", "taser", "cattle prod", "chicken feeder",
+                     "chicken coop", "door bell", "ouija", "finder"]),
 
     # Making — physical builds, crafts, everything else
     ("making",      ["box", "fire", "knife", "wooden", "bracelet",
@@ -230,16 +236,20 @@ def fetch_project_detail(project, session):
     """
     Fetch an individual project page and extract:
     - thumbnail image URL
-    - view count
     - category (auto-assigned from title/URL)
     - description (first step intro, truncated)
-    Returns the project dict with these fields added.
+
+    NOTE: view counts are NOT fetched here. Instructables renders the view
+    count via JavaScript after page load, which a plain HTTP request can't
+    see. View counts are filled in by download_archive.py instead, which
+    uses a real browser (Playwright) and writes the count back into
+    projects.json. Run download_archive.py after this script to get views.
     """
     url = project["url"]
     print(f"  Scraping: {project['title'][:55]}")
     r = get(url, session)
     if not r:
-        project.update({"img": "", "views": 0,
+        project.update({"img": "", "views": project.get("views", 0),
                         "category": categorise(project["title"], url),
                         "description": ""})
         return project
@@ -260,22 +270,6 @@ def fetch_project_detail(project, session):
                 img_url = src
                 break
 
-    # -- Views --
-    views = 0
-    # Look for view count in stats bar
-    for el in soup.select("span.views-count, div.views, [data-views]"):
-        txt = el.get_text(strip=True)
-        if txt:
-            views = parse_views(txt)
-            break
-    # Fallback: search for "Views" label nearby
-    if not views:
-        for el in soup.find_all(string=re.compile(r"^\d[\d,.KkMm]+$")):
-            parent = el.parent
-            if parent and "view" in (parent.get("class") or [""]):
-                views = parse_views(str(el))
-                break
-
     # -- Description (first paragraph of intro step) --
     desc = ""
     intro = soup.select_one("div.step-intro p, section.intro p, div.intro-text p")
@@ -284,7 +278,7 @@ def fetch_project_detail(project, session):
 
     project.update({
         "img":         img_url,
-        "views":       views,
+        "views":       project.get("views", 0),  # preserved/filled by download_archive.py
         "category":    categorise(project["title"], url),
         "description": desc,
     })
@@ -327,24 +321,31 @@ def main():
         sys.stdout.flush()
 
         if url in existing and existing[url].get("img"):
-            # Already have full data -- keep it, just update title if changed
+            # Already have full data -- keep it (including any views captured
+            # by download_archive.py), just update title if changed
             cached = existing[url]
             cached["title"] = p["title"]
+            cached["category"] = categorise(p["title"], url)
             results.append(cached)
         else:
+            p["views"] = existing.get(url, {}).get("views", 0)
             detail = fetch_project_detail(p, session)
             results.append(detail)
             new_count += 1
 
     print(f"\n      {new_count} new/updated, {len(results) - new_count} from cache")
 
-    # Sort newest first (profile order)
     # Write output
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_FILE, "w") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
     print(f"\nDone. Wrote {len(results)} projects to {OUTPUT_FILE}")
+    no_views = sum(1 for r in results if not r.get("views"))
+    if no_views:
+        print(f"\n{no_views} projects have no view count yet.")
+        print("Run python scraper/download_archive.py to fill these in")
+        print("(it uses a real browser, which Instructables requires for view counts).")
     print("\nNext steps:")
     print("  git add projects.json")
     print("  git commit -m 'update projects'")
