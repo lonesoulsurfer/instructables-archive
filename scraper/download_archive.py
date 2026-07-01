@@ -97,6 +97,62 @@ def download_image(url, dest, session):
         return False
 
 
+def download_pdf_link(a, pdfs_dir, session, seen_hrefs):
+    """Download a single PDF link element. Returns dict or None."""
+    try:
+        href = a.get_attribute('href') or ''
+        if not href or '.pdf' not in href.lower():
+            return None
+        if href.startswith('/'):
+            href = 'https://www.instructables.com' + href
+        elif not href.startswith('http'):
+            return None
+        if href in seen_hrefs:
+            return None
+        seen_hrefs.add(href)
+        label = a.inner_text().strip()
+        url_fname = Path(href.split('?')[0]).name
+        if not label or label.lower() in ('download', 'pdf', ''):
+            label = url_fname if url_fname.endswith('.pdf') else 'Download'
+        clean = re.sub(r'[^\w\-. ]', '_', label).strip()
+        if not clean.lower().endswith('.pdf'):
+            clean += '.pdf'
+        fname = clean[:80]
+        pdfs_dir.mkdir(exist_ok=True)
+        dest = pdfs_dir / fname
+        if dest.exists() or download_image(href, dest, session):
+            return {'label': label.replace('.pdf', ''), 'file': f'pdfs/{fname}'}
+        return None
+    except Exception:
+        return None
+
+
+def download_pdfs(page, project_dir, session):
+    """Find and download all PDF links, grouped by step section."""
+    try:
+        pdfs_dir = project_dir / "pdfs"
+        seen_hrefs = set()
+        sections = page.query_selector_all('section[class*="_step_"]')
+        if sections:
+            result = []
+            for section in sections:
+                h2 = section.query_selector('h2')
+                title = h2.inner_text().strip() if h2 else ''
+                links = section.query_selector_all('a[href*=".pdf"]')
+                step_pdfs = []
+                for a in links:
+                    pdf = download_pdf_link(a, pdfs_dir, session, seen_hrefs)
+                    if pdf:
+                        step_pdfs.append(pdf)
+                if step_pdfs:
+                    result.append((title, step_pdfs))
+            return result
+        return []
+    except Exception as e:
+        print(f"    [warn] PDF download: {e}")
+        return []
+
+
 # ── STEP EXTRACTION ───────────────────────────────────────────────────────────
 
 def extract_page_data(page, url):
@@ -148,6 +204,34 @@ def extract_page_data(page, url):
                 const bodyEl = section.querySelector('[class*="_stepBody_"]') || section;
                 const parts = [];
 
+                // Convert element content to markdown, preserving <a href> as [text](url)
+                function inlineMd(el) {
+                    let out = '';
+                    const kids = Array.from(el.childNodes);
+                    for (let ci = 0; ci < kids.length; ci++) {
+                        const child = kids[ci];
+                        if (child.nodeType === 3) {
+                            out += child.textContent;
+                        } else if (child.nodeType === 1) {
+                            const tag = child.tagName.toLowerCase();
+                            if (tag === 'a') {
+                                const href = child.getAttribute('href') || '';
+                                const label = child.innerText.trim();
+                                if (href.indexOf('http') === 0 && label) {
+                                    out += '[' + label + '](' + href + ')';
+                                } else {
+                                    out += child.innerText || '';
+                                }
+                            } else if (tag === 'br') {
+                                out += ' ';
+                            } else if (tag !== 'script' && tag !== 'style') {
+                                out += inlineMd(child);
+                            }
+                        }
+                    }
+                    return out.replace(/\s+/g, ' ').trim();
+                }
+
                 function nodeToMd(el) {
                     const kids = Array.from(el.childNodes);
                     for (let ci = 0; ci < kids.length; ci++) {
@@ -158,24 +242,24 @@ def extract_page_data(page, url):
                         } else if (child.nodeType === 1) {
                             const tag = child.tagName.toLowerCase();
                             if (tag === 'p') {
-                                const pt = child.innerText.trim();
+                                const pt = inlineMd(child);
                                 if (pt) { parts.push(pt); parts.push(''); }
                             } else if (tag === 'ul') {
                                 const lis = child.querySelectorAll(':scope > li');
                                 for (let i = 0; i < lis.length; i++) {
-                                    parts.push('- ' + lis[i].innerText.trim());
+                                    parts.push('- ' + inlineMd(lis[i]));
                                 }
                                 parts.push('');
                             } else if (tag === 'ol') {
                                 const lis = child.querySelectorAll(':scope > li');
                                 for (let i = 0; i < lis.length; i++) {
-                                    parts.push((i + 1) + '. ' + lis[i].innerText.trim());
+                                    parts.push((i + 1) + '. ' + inlineMd(lis[i]));
                                 }
                                 parts.push('');
                             } else if (tag === 'li') {
-                                parts.push('- ' + child.innerText.trim());
+                                parts.push('- ' + inlineMd(child));
                             } else if (tag === 'h3' || tag === 'h4' || tag === 'h5') {
-                                const ht = child.innerText.trim();
+                                const ht = inlineMd(child);
                                 if (ht) { parts.push('**' + ht + '**'); parts.push(''); }
                             } else if (tag === 'br') {
                                 parts.push('');
@@ -187,7 +271,7 @@ def extract_page_data(page, url):
                 }
 
                 nodeToMd(bodyEl);
-                const text = parts.join('\n').replace(/\n\n\n+/g, '\n\n').trim();
+                const text = parts.join('\\n').replace(/\\n\\n\\n+/g, '\\n\\n').trim();
                 result.steps.push({ title: title, images: imgs, text: text });
             });
 
@@ -298,6 +382,7 @@ def archive_project(url, project_title, page, session, force=False):
                     _json.dump(all_projects, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"    [warn] could not update projects.json views: {e}")
+
     cover_url = data.get("coverUrl", "")
     steps     = data.get("steps", [])
 
@@ -352,10 +437,48 @@ def archive_project(url, project_title, page, session, force=False):
                 els = body.query_selector_all('p, li, h3, h4, h5') if body else []
                 parts = []
                 for el in els:
-                    t = el.inner_text().strip()
+                    tag = el.evaluate('el => el.tagName.toLowerCase()')
+                    if tag == 'li':
+                        # Skip nested li (parent is another li)
+                        is_nested = el.evaluate('el => el.parentElement && el.parentElement.parentElement && el.parentElement.parentElement.tagName.toLowerCase() === "li"')
+                        if is_nested:
+                            continue
+                        # Get direct text only, exclude nested list text
+                        t = el.evaluate("""el => {
+                            var out = '';
+                            el.childNodes.forEach(function(n) {
+                                if (n.nodeType === 3) out += n.textContent;
+                                else if (n.nodeType === 1) {
+                                    var nt = n.tagName.toLowerCase();
+                                    if (nt !== 'ul' && nt !== 'ol') out += (n.innerText || '');
+                                }
+                            });
+                            return out.trim();
+                        }""")
+                        # Preserve links
+                        try:
+                            links = el.query_selector_all('a')
+                            for a in links:
+                                href = a.get_attribute('href') or ''
+                                lbl = a.inner_text().strip()
+                                if href.startswith('http') and lbl:
+                                    t = t.replace(lbl, f'[{lbl}]({href})', 1)
+                        except Exception:
+                            pass
+                    else:
+                        t = el.inner_text().strip()
+                        if tag == 'p':
+                            try:
+                                links = el.query_selector_all('a')
+                                for a in links:
+                                    href = a.get_attribute('href') or ''
+                                    lbl = a.inner_text().strip()
+                                    if href.startswith('http') and lbl:
+                                        t = t.replace(lbl, f'[{lbl}]({href})', 1)
+                            except Exception:
+                                pass
                     if not t or t in SKIP_TEXT:
                         continue
-                    tag = el.evaluate('el => el.tagName.toLowerCase()')
                     if tag == 'li':
                         parts.append('- ' + t)
                     elif tag in ('h3', 'h4', 'h5'):
@@ -364,6 +487,7 @@ def archive_project(url, project_title, page, session, force=False):
                     else:
                         parts.append(t)
                         parts.append('')
+
                 # Fallback for older pages with no <p>/<li> tags — use raw inner_text
                 if not parts:
                     try:
@@ -419,8 +543,20 @@ def archive_project(url, project_title, page, session, force=False):
         if intro_text:
             lines.append(intro_text + "\n")
 
+    # Download PDFs grouped by step
+    pdf_by_step = download_pdfs(page, project_dir, session)
+    pdf_lookup_norm = {t.lower().strip(): ps for t, ps in pdf_by_step}
+    all_pdfs = [(t, p) for t, ps in pdf_by_step for p in ps]
+    total_pdfs = len(all_pdfs)
+
     # Process each step — use a separate counter so skipped steps don't offset it
     real_step_idx = 0
+    pending_pdfs = list(pdf_lookup_norm.get("introduction", []))
+    if pending_pdfs:
+        for pdf in pending_pdfs:
+            lines.append(f"- [{pdf['label']}]({pdf['file']})")
+        lines.append("")
+
     for step in steps:
         step_title  = step.get("title", "")
         step_images = step.get("images", [])
@@ -448,12 +584,25 @@ def archive_project(url, project_title, page, session, force=False):
             cleaned = re.sub(r'\n{3,}', '\n\n', step_text).strip()
             lines.append(cleaned + "\n")
 
+        # Inject PDFs that belong to this step
+        norm = step_title.lower().strip()
+        if norm in pdf_lookup_norm:
+            lines.append("")
+            for pdf in pdf_lookup_norm[norm]:
+                lines.append(f"- [{pdf['label']}]({pdf['file']})")
+
+    # Always add a Downloads section listing every PDF found
+    if all_pdfs:
+        lines.append("\n## Downloads\n")
+        for _, pdf in all_pdfs:
+            lines.append(f"- [{pdf['label']}]({pdf['file']})")
+
     lines.append(f"\n---\n*{total_imgs} images archived*\n")
 
     with open(index_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    print(f"    {len(steps)} steps, {total_imgs} images")
+    print(f"    {len(steps)} steps, {total_imgs} images, {total_pdfs} PDFs")
     return True
 
 
