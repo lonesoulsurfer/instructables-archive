@@ -151,3 +151,13 @@ your-repo/
 ## Credits
 
 Built by [lonesoulsurfer](https://www.instructables.com/member/lonesoulsurfer/).
+
+## Support
+
+Do you like this project? You can support my work on [GitHub Sponsors](https://github.com/sponsors/lonesoulsurfer).
+
+## Licence
+
+This project uses the [MIT License](LICENSE). You can use, change and share it. Copyright (c) 2026 Marcus (lonesoulsurfer).
+
+The archive that you make with this tool contains your own Instructables content. It stays yours.
